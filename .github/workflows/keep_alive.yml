@@ -2,7 +2,7 @@ name: Keep Monitor Alive
 
 on:
   schedule:
-    - cron: '*/14 * * * *' # Cada 14 minutos
+    - cron: '*/8 * * * *' # Cada 8 minutos
   workflow_dispatch: # Permite ejecución manual
 
 jobs:
