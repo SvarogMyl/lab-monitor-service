@@ -20,28 +20,20 @@ const FIXED_SERVICES = [
     { name: 'Frontend (Next.js)', url: 'https://lab-frontend-nextjs.vercel.app/' }
 ];
 
+// Helper to wait
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // State
 let servicesStatus = [];
 
-// Helper to identify service names based on project data or URL
-const getServiceName = (project, url) => {
-    if (project && project.title) return project.title;
-    if (url.includes('core-node')) return 'Core API (Node.js)';
-    if (url.includes('spring')) return 'Backend Legacy (Java)';
-    if (url.includes('auth-service')) return 'Auth Service (Go)';
-    if (url.includes('vercel.app')) return 'Frontend (Next.js)';
-    return 'Unknown Service';
-};
-
-// Discovery Logic
-async function discoverServices() {
+// Discovery Logic with Retry for Cold Starts
+async function discoverServices(retry = true) {
     console.log(`[Discovery] Fetching services from ${DISCOVERY_URL}...`);
     try {
         const response = await axios.get(DISCOVERY_URL, { timeout: 10000 });
         const projects = response.data;
         
         if (Array.isArray(projects)) {
-            // Map projects to service objects
             const dynamicServices = projects
                 .filter(p => p.live_url && p.live_url.trim() !== '')
                 .map(p => ({
@@ -53,7 +45,6 @@ async function discoverServices() {
                     error: null
                 }));
 
-            // Merge with fixed services (avoiding duplicates)
             const seenUrls = new Set(dynamicServices.map(s => s.url));
             const merged = [...dynamicServices];
             
@@ -70,12 +61,24 @@ async function discoverServices() {
             }
 
             servicesStatus = merged;
-            console.log(`[Discovery] Found ${dynamicServices.length} dynamic services. Total monitored: ${servicesStatus.length}`);
+            console.log(`[Discovery] Success! Monitored services: ${servicesStatus.length}`);
+            return true;
         }
     } catch (error) {
-        console.error(`[Discovery] Failed to fetch dynamic services: ${error.message}`);
-        // Fallback to fixed services if empty
+        console.warn(`[Discovery] Attempt failed: ${error.message}`);
+        
+        if (retry) {
+            console.log(`[Discovery] Possible Cold Start. Waking up Core API and waiting 30s for retry...`);
+            // Attempt to wake up Core API via its health check
+            axios.get('https://lab-core-node.onrender.com/health').catch(() => {});
+            
+            await sleep(30000); // Wait 30 seconds for Render to spin up
+            return await discoverServices(false); // One retry only
+        }
+
+        // Fallback to fixed services if both attempts fail
         if (servicesStatus.length === 0) {
+            console.error(`[Discovery] Discovery failed twice. Using hardcoded fallbacks.`);
             servicesStatus = FIXED_SERVICES.map(s => ({
                 ...s,
                 status: 'UNKNOWN',
@@ -84,6 +87,7 @@ async function discoverServices() {
                 error: null
             }));
         }
+        return false;
     }
 }
 
@@ -91,13 +95,12 @@ async function discoverServices() {
 async function checkServices() {
     console.log(`[Monitor] Starting health check at ${new Date().toISOString()}`);
     
-    // Always try to discover new services or update URLs before checking
+    // Attempt discovery
     await discoverServices();
 
     for (let service of servicesStatus) {
         const start = Date.now();
         try {
-            // We use a shorter timeout for the check to not block the loop
             const response = await axios.get(service.url, { timeout: 15000 });
             service.status = 'UP';
             service.latency = Date.now() - start;
