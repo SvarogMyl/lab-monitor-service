@@ -14,15 +14,25 @@ app.use(express.static('public'));
 const TARGET_URLS = process.env.TARGET_URLS 
     ? process.env.TARGET_URLS.split(',').map(url => url.trim())
     : [
+        'https://lab-core-node.onrender.com/api-docs',
         'https://lab-spring-postgres.onrender.com/health',
         'https://lab-frontend-nextjs.vercel.app/'
     ];
 
-const INTERVAL = parseInt(process.env.MONITOR_INTERVAL_MS) || 600000; // 10 minutes default
+const INTERVAL = parseInt(process.env.MONITOR_INTERVAL_MS) || 300000; // 5 minutes default (safer for Render)
+
+// Helper to identify service names based on URL
+const getServiceName = (url) => {
+    if (url.includes('core-node')) return 'Core API (Node.js)';
+    if (url.includes('spring')) return 'Backend Legacy (Java)';
+    if (url.includes('auth-service')) return 'Auth Service (Go)';
+    if (url.includes('vercel.app')) return 'Frontend (Next.js)';
+    return 'Unknown Service';
+};
 
 // State
 let servicesStatus = TARGET_URLS.map(url => ({
-    name: url.includes('render') ? (url.includes('spring') ? 'Backend Java' : 'Auth Service Go') : 'Frontend NextJS',
+    name: getServiceName(url),
     url: url,
     status: 'UNKNOWN',
     latency: 0,
