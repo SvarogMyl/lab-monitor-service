@@ -101,7 +101,13 @@ async function checkServices() {
     for (let service of servicesStatus) {
         const start = Date.now();
         try {
-            const response = await axios.get(service.url, { timeout: 15000 });
+            const response = await axios.get(service.url, { 
+                timeout: 15000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                }
+            });
             service.status = 'UP';
             service.latency = Date.now() - start;
             service.error = null;
