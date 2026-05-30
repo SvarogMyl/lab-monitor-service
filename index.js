@@ -11,12 +11,12 @@ app.use(cors());
 app.use(express.static('public'));
 
 // Configuration
-const DISCOVERY_URL = process.env.DISCOVERY_URL || 'https://lab-core-node.onrender.com/projects';
+const DISCOVERY_URL = process.env.DISCOVERY_URL || 'https://api.165.1.125.187.nip.io/projects';
 const INTERVAL = parseInt(process.env.MONITOR_INTERVAL_MS) || 300000; // 5 minutes
 
 // Base services that must ALWAYS be monitored (Fallbacks)
 const FIXED_SERVICES = [
-    { name: 'Core API (Node.js)', url: 'https://lab-core-node.onrender.com/health' },
+    { name: 'Core API (Node.js)', url: 'https://api.165.1.125.187.nip.io/health' },
     { name: 'Frontend (Next.js)', url: 'https://lab-frontend-nextjs.vercel.app/' }
 ];
 
@@ -68,12 +68,9 @@ async function discoverServices(retry = true) {
         console.warn(`[Discovery] Attempt failed: ${error.message}`);
         
         if (retry) {
-            console.log(`[Discovery] Possible Cold Start. Waking up Core API and waiting 30s for retry...`);
-            // Attempt to wake up Core API via its health check
-            axios.get('https://lab-core-node.onrender.com/health').catch(() => {});
-            
-            await sleep(30000); // Wait 30 seconds for Render to spin up
-            return await discoverServices(false); // One retry only
+            console.log(`[Discovery] Retrying in 10s...`);
+            await sleep(10000);
+            return await discoverServices(false);
         }
 
         // Fallback to fixed services if both attempts fail
