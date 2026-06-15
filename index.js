@@ -11,13 +11,13 @@ app.use(cors());
 app.use(express.static('public'));
 
 // Configuration
-const DISCOVERY_URL = process.env.DISCOVERY_URL || 'https://api.165.1.125.187.nip.io/projects';
+const DISCOVERY_URL = process.env.DISCOVERY_URL || 'https://api.svasoft.cl/projects';
 const INTERVAL = parseInt(process.env.MONITOR_INTERVAL_MS) || 300000; // 5 minutes
 
-// Base services that must ALWAYS be monitored (Fallbacks)
+// Base services que siempre se monitorean si el discovery falla
 const FIXED_SERVICES = [
-    { name: 'Core API (Node.js)', url: 'https://api.165.1.125.187.nip.io/health' },
-    { name: 'Frontend (Next.js)', url: 'https://lab-frontend-nextjs.vercel.app/' }
+    { name: 'Backend Core (Node.js)', url: 'https://api.svasoft.cl/health' },
+    { name: 'Svarog Web', url: 'https://svasoft.cl' }
 ];
 
 // Helper to wait
@@ -97,21 +97,38 @@ async function checkServices() {
 
     for (let service of servicesStatus) {
         const start = Date.now();
+        const opts = {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; SvarogMonitor/1.0)',
+                'Accept': 'application/json, text/html, */*'
+            }
+        };
         try {
-            const response = await axios.get(service.url, { 
-                timeout: 15000,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-                }
-            });
+            await axios.get(service.url, opts);
             service.status = 'UP';
             service.latency = Date.now() - start;
             service.error = null;
         } catch (error) {
-            service.status = 'DOWN';
-            service.latency = Date.now() - start;
-            service.error = error.message;
+            const httpStatus = error.response?.status;
+            // 4xx en raíz — típico en backends que solo exponen /health. Reintentar con /health.
+            if ((httpStatus === 404 || httpStatus === 403) && !service.url.endsWith('/health')) {
+                try {
+                    const healthUrl = service.url.replace(/\/$/, '') + '/health';
+                    await axios.get(healthUrl, opts);
+                    service.status = 'UP';
+                    service.latency = Date.now() - start;
+                    service.error = null;
+                } catch (healthError) {
+                    service.status = 'DOWN';
+                    service.latency = Date.now() - start;
+                    service.error = healthError.message;
+                }
+            } else {
+                service.status = 'DOWN';
+                service.latency = Date.now() - start;
+                service.error = error.message;
+            }
         }
         service.lastChecked = new Date().toISOString();
         console.log(`[Monitor] ${service.name}: ${service.status} (${service.latency}ms)`);
