@@ -1,0 +1,111 @@
+openapi: "3.0.3"
+info:
+  title: lab-monitor-service
+  description: |
+    Monitor de disponibilidad del ecosistema Svarog.
+
+    Descubre servicios dinámicamente desde `lab-core-node` (`/projects`) y los combina
+    con un listado fijo de servicios críticos. Verifica disponibilidad cada 5 minutos
+    mediante HTTP GET. Si el root devuelve 4xx, reintenta con `/health` automáticamente.
+
+    La UI del dashboard se sirve como archivos estáticos desde `/`.
+  version: "1.0.0"
+
+servers:
+  - url: https://monitor.svasoft.cl
+    description: Producción (Oracle Cloud)
+  - url: http://localhost:3001
+    description: Local
+
+tags:
+  - name: Monitor
+    description: Estado de disponibilidad de los servicios del ecosistema
+  - name: System
+    description: Documentación de la API
+
+paths:
+  /api/status:
+    get:
+      tags: [Monitor]
+      summary: Estado de todos los servicios monitoreados
+      description: |
+        Retorna el último estado conocido de cada servicio.
+        Los checks se ejecutan automáticamente cada 5 minutos (configurable con `MONITOR_INTERVAL_MS`).
+
+        **Lógica de discovery:**
+        1. Intenta obtener la lista de servicios desde `DISCOVERY_URL` (`lab-core-node /projects`)
+        2. Si falla, reintenta una vez tras 10 segundos
+        3. Si sigue fallando, usa la lista fija de servicios críticos (`FIXED_SERVICES`)
+        4. Servicios con 4xx en `/` se reintentan en `<url>/health` antes de marcar DOWN
+      responses:
+        "200":
+          description: Lista de servicios con su estado actual
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServiceStatus"
+
+  /openapi.yaml:
+    get:
+      tags: [System]
+      summary: Especificación OpenAPI en formato YAML
+      responses:
+        "200":
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      tags: [System]
+      summary: Swagger UI — documentación interactiva
+      responses:
+        "200":
+          description: Página HTML con Swagger UI
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  schemas:
+    ServiceStatus:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Nombre del servicio
+          example: "Backend Core (Node.js)"
+        url:
+          type: string
+          format: uri
+          description: URL del endpoint verificado
+          example: "https://api.svasoft.cl/health"
+        status:
+          type: string
+          enum: [UP, DOWN, UNKNOWN]
+          description: |
+            Estado actual del servicio.
+            - `UNKNOWN` — aún no se ha verificado desde el último inicio
+            - `UP` — respondió 2xx en el último check
+            - `DOWN` — no respondió o retornó error en el último check
+          example: "UP"
+        latency:
+          type: integer
+          description: Latencia en milisegundos del último check
+          example: 120
+        lastChecked:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp ISO 8601 del último check realizado
+          example: "2026-06-15T10:30:00.000Z"
+        error:
+          type: string
+          nullable: true
+          description: Mensaje de error del último check fallido
+          example: null
